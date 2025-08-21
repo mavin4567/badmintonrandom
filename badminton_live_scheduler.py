@@ -15,7 +15,7 @@ from typing import List, Optional
 # -----------------------------
 # Session State Initialization
 # -----------------------------
-DEFAULT_NAMES = "วิน\nโต๊ด\nติน\nต่อ\nมุก\nเฟิร์น\nกันดั้ม\nโก้"
+DEFAULT_NAMES = ""
 ss = st.session_state
 
 # เตรียมค่าเริ่มต้นใน session_state
