@@ -88,4 +88,76 @@ def process_result(winner_side):
 # UI
 # -----------------------------
 st.title("🏸 ระบบจัดตารางการแข่งขันแบดมินตัน")
-st.markdown("ระบบจะสุ่มทีมอัตโนมัติและจ
+st.markdown("ระบบจะสุ่มทีมอัตโนมัติและจัดคิวการเล่น เพื่อให้ทุกคนได้เล่นครบถ้วน")
+
+# ใส่รายชื่อผู้เล่น
+st.subheader("👥 ใส่รายชื่อผู้เล่น (สูงสุด 16 คน)")
+names_input = st.text_area(
+    "พิมพ์รายชื่อ (ขึ้นบรรทัดใหม่สำหรับแต่ละคน)", 
+    "วิน\nโต๊ด\nติน\nต่อ\nมุก\nเฟิร์น\nกันดั้ม\nโก้"
+)
+players = [n.strip() for n in names_input.split("\n") if n.strip()]
+
+col_start, col_reset, col_refresh = st.columns(3)
+with col_start:
+    if st.button("🚀 เริ่มเกมใหม่"):
+        if len(players) < 4:
+            st.error("❌ ต้องมีอย่างน้อย 4 คนขึ้นไป")
+        else:
+            st.session_state.players = players
+            init_stats(players)
+            start_new_round()
+            st.success("✅ เริ่มเกมใหม่เรียบร้อย!")
+with col_reset:
+    if st.button("🔄 Reset เกม"):
+        st.session_state.players = []
+        st.session_state.teams = []
+        st.session_state.current_match = None
+        st.session_state.winner_streak = {"team": None, "count": 0}
+        st.session_state.history = []
+        st.session_state.queue = []
+        st.session_state.stats = {}
+        st.success("♻️ ล้างข้อมูลเรียบร้อย")
+with col_refresh:
+    if st.button("🔃 Refresh สถานะ"):
+        st.experimental_rerun()
+
+# แสดงแมตช์ปัจจุบัน
+if st.session_state.current_match:
+    team_left, team_right = st.session_state.current_match
+    st.subheader("🎯 แมตช์ปัจจุบัน")
+    st.markdown(f"**ทีมซ้าย:** {' & '.join(team_left)}  🆚  **ทีมขวา:** {' & '.join(team_right)}")
+
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("✅ ทีมซ้ายชนะ"):
+            process_result("left")
+            st.experimental_rerun()
+    with col2:
+        if st.button("✅ ทีมขวาชนะ"):
+            process_result("right")
+            st.experimental_rerun()
+
+# ประวัติย้อนหลัง
+if st.session_state.history:
+    st.subheader("📜 ประวัติการแข่งขัน")
+    for i, match in enumerate(st.session_state.history, 1):
+        st.write(f"{i}. {match}")
+
+# ตารางสถิติ
+if st.session_state.stats:
+    st.subheader("📊 สถิติผู้เล่น")
+    stats_table = [
+        {
+            "ผู้เล่น": p,
+            "จำนวนแมตช์": st.session_state.stats[p]["played"],
+            "ชนะ": st.session_state.stats[p]["win"],
+            "อัตราชนะ (%)": round(
+                (st.session_state.stats[p]["win"] / st.session_state.stats[p]["played"] * 100)
+                if st.session_state.stats[p]["played"] > 0 else 0,
+                1
+            )
+        }
+        for p in st.session_state.stats
+    ]
+    st.table(stats_table)
