@@ -41,7 +41,7 @@ for i, t in enumerate(st.session_state.teams, 1):
     st.write(f"ทีม {i}: {t[0]} + {t[1]}")
 
 # ถ้ามีทีมในคิว
-if st.session_state.queue:
+if st.session_state.queue and st.session_state.current_team:
     challenger = st.session_state.queue[0]
     st.markdown(f"### แมตช์ {st.session_state.match_no}")
     st.write(f"{st.session_state.current_team[0]} + {st.session_state.current_team[1]}  VS  {challenger[0]} + {challenger[1]}")
@@ -82,12 +82,14 @@ if st.session_state.queue:
             # บันทึกผู้ชนะล่าสุด
             st.session_state.last_winner = "current"
 
-            # ถ้าชนะติดกัน 2 ครั้ง → ออกไปพัก
+            # ถ้าชนะติดกัน 2 ครั้ง → ออกไปพัก และดึงทีมใหม่จากคิว
             if st.session_state.streak[key] >= 2:
                 st.warning(f"ทีม {winner[0]}+{winner[1]} ชนะ 2 แมตช์ติด ต้องออกไปรอก่อน!")
                 st.session_state.queue.pop(0)  # เอาทีม challenger ออก
                 if st.session_state.queue:
                     st.session_state.current_team = st.session_state.queue.pop(0)
+                else:
+                    st.session_state.current_team = None
             else:
                 # แมตช์ปกติ → challenger เล่นไปแล้ว เอาออกจากคิว
                 st.session_state.queue.pop(0)
