@@ -1,9 +1,9 @@
 import streamlit as st
 import random
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 # ============================================================
-# 🏸 Badminton Live Scheduler — เวอร์ชันเสถียร
+# 🏸 Badminton Live Scheduler — Stable + Auto Refresh
 # ============================================================
 
 DEFAULT_NAMES = ""
@@ -14,7 +14,7 @@ ss = st.session_state
 # -----------------------------
 DEFAULTS = {
     "players": [],
-    "current_match": None,
+    "current_match": None,  # Tuple[List[str], List[str]] | None
     "queue": [],
     "winner_streak": {"team": None, "count": 0, "first_loser": None},
     "history": [],
@@ -26,15 +26,15 @@ for k, v in DEFAULTS.items():
         ss[k] = v
 
 # -----------------------------
-# Helper Functions
+# Utilities
 # -----------------------------
-
 def force_rerun():
+    """รองรับทั้ง st.rerun() และ experimental (fallback)"""
     try:
         st.rerun()
     except Exception:
         try:
-            st.experimental_rerun()  # fallback
+            st.experimental_rerun()  # type: ignore[attr-defined]
         except Exception:
             pass
 
@@ -42,6 +42,7 @@ def init_stats(players: List[str]):
     ss.stats = {p: {"played": 0, "win": 0} for p in players}
 
 def _choose_resting_player(players: List[str]) -> Optional[str]:
+    """เลือกคนพักแบบยุติธรรม: คนที่เล่นน้อยสุด ถ้าเท่ากันสุ่ม"""
     if len(players) % 2 == 0:
         return None
     if not ss.stats:
@@ -57,6 +58,23 @@ def _pair_teams(active_players: List[str]) -> List[List[str]]:
         shuffled = shuffled[:-1]
     return [shuffled[i:i+2] for i in range(0, len(shuffled), 2)]
 
+def _fmt_team(team: List[str]) -> str:
+    return " & ".join(team)
+
+def _valid_match(m) -> bool:
+    """ตรวจสอบว่า current_match ถูกต้องเป็น (teamA, teamB) และแต่ละทีมมี 2 คน"""
+    if not isinstance(m, (list, tuple)) or len(m) != 2:
+        return False
+    a, b = m
+    if not isinstance(a, (list, tuple)) or not isinstance(b, (list, tuple)):
+        return False
+    if len(a) != 2 or len(b) != 2:
+        return False
+    return True
+
+# -----------------------------
+# Round / Flow
+# -----------------------------
 def start_new_round():
     players = ss.players[:]
     if len(players) < 4:
@@ -65,10 +83,7 @@ def start_new_round():
         return
 
     ss.resting_player = _choose_resting_player(players)
-    if ss.resting_player:
-        active = [p for p in players if p != ss.resting_player]
-    else:
-        active = players[:]
+    active = [p for p in players if p != ss.resting_player] if ss.resting_player else players[:]
 
     teams = _pair_teams(active)
     if len(teams) < 2:
@@ -78,6 +93,7 @@ def start_new_round():
 
     ss.current_match = (teams[0], teams[1])
     ss.queue = teams[2:]
+    # รีเซ็ตสตรีคเมื่อตั้งรอบใหม่
     ss.winner_streak = {"team": None, "count": 0, "first_loser": None}
 
 def _update_stats(team: List[str], *, is_winner: bool):
@@ -87,36 +103,46 @@ def _update_stats(team: List[str], *, is_winner: bool):
         if is_winner:
             ss.stats[p]["win"] += 1
 
-def _fmt_team(team: List[str]) -> str:
-    return " & ".join(team)
-
 def process_result(winner_side: str):
-    if not ss.current_match:
+    """บันทึกผลและจัดคู่ใหม่ ตามกติกา + กันพังทุกกรณี + refresh อัตโนมัติ"""
+    m = ss.get("current_match")
+    if not m or not _valid_match(m):
+        # ไม่มีแมตช์ที่ถูกต้อง — พยายามเปิดรอบใหม่ให้
+        start_new_round()
         return
 
-    left, right = ss.current_match
+    left, right = m  # แต่ละทีมเป็น list[str] ยาว 2
     winner = left if winner_side == "left" else right
     loser = right if winner_side == "left" else left
 
+    # ป้องกันกรณีข้อมูลทีมผิดรูป
+    if not (isinstance(winner, (list, tuple)) and isinstance(loser, (list, tuple))):
+        start_new_round()
+        return
+
+    # ประวัติ + สถิติ
     ss.history.append(f"{_fmt_team(winner)} ✅ ชนะ {_fmt_team(loser)} ❌")
     _update_stats(winner, is_winner=True)
     _update_stats(loser, is_winner=False)
 
-    # จัดการ streak
+    # สตรีค
     if ss.winner_streak["team"] == winner:
         ss.winner_streak["count"] += 1
     else:
         ss.winner_streak = {"team": winner, "count": 1, "first_loser": loser}
 
+    # ชนะครบ 2 → ทีมชนะออก, เอา first_loser กลับมาเจอทีมใหม่
     if ss.winner_streak["count"] >= 2:
         first_loser = ss.winner_streak.get("first_loser") or loser
         if ss.queue:
             incoming = ss.queue.pop(0)
             ss.current_match = (first_loser, incoming)
+            # เริ่มนับสตรีคใหม่ตั้งแต่แมตช์ถัดไป
             ss.winner_streak = {"team": None, "count": 0, "first_loser": None}
         else:
             start_new_round()
     else:
+        # ทีมชนะอยู่ต่อ เจอทีมใหม่จากคิว
         if ss.queue:
             incoming = ss.queue.pop(0)
             ss.current_match = (winner, incoming)
@@ -141,62 +167,3 @@ with c_start:
         if len(players) < 4:
             st.error("ต้องมีอย่างน้อย 4 คนขึ้นไป")
         elif len(players) > 16:
-            st.error("รองรับได้สูงสุด 16 คน")
-        else:
-            ss.players = players
-            init_stats(players)
-            start_new_round()
-            st.success("เริ่มเกมใหม่เรียบร้อย!")
-            force_rerun()
-with c_reset:
-    if st.button("♻️ Reset ทั้งหมด"):
-        for k in list(ss.keys()):
-            del ss[k]
-        st.success("ล้างสถานะทั้งหมดแล้ว")
-        force_rerun()
-with c_refresh:
-    if st.button("🔃 Refresh สถานะ"):
-        force_rerun()
-
-if ss.get("resting_player"):
-    st.info(f"👤 ผู้เล่นที่พักรอบนี้: **{ss.resting_player}**")
-
-if ss.get("current_match"):
-    left, right = ss.current_match
-    st.subheader("🎯 แมตช์ปัจจุบัน")
-    st.markdown(f"**ทีมซ้าย:** {_fmt_team(left)}  \t🆚\t  **ทีมขวา:** {_fmt_team(right)}")
-
-    c1, c2 = st.columns(2)
-    with c1:
-        if st.button("✅ ทีมซ้ายชนะ"):
-            process_result("left")
-    with c2:
-        if st.button("✅ ทีมขวาชนะ"):
-            process_result("right")
-
-    if ss.get("queue"):
-        st.caption("คิวถัดไป:")
-        for i, t in enumerate(ss.queue, 1):
-            st.write(f"• {_fmt_team(t)}")
-else:
-    if ss.get("players"):
-        st.warning("ยังไม่มีแมตช์ให้เล่น — กด \"เริ่มเกมใหม่\" เพื่อเริ่มรอบใหม่")
-
-if ss.get("history"):
-    st.subheader("📜 ประวัติการแข่งขัน")
-    for i, line in enumerate(ss.history, 1):
-        st.write(f"{i}. {line}")
-
-if ss.get("stats"):
-    st.subheader("📊 สถิติผู้เล่น")
-    ordered = sorted(ss.stats.items(), key=lambda kv: (kv[1].get("played", 0), -kv[1].get("win", 0)))
-    table_rows = [
-        {
-            "ผู้เล่น": name,
-            "จำนวนแมตช์": data.get("played", 0),
-            "ชนะ": data.get("win", 0),
-            "อัตราชนะ (%)": round((data.get("win", 0) / data.get("played", 0) * 100) if data.get("played", 0) else 0, 1),
-        }
-        for name, data in ordered
-    ]
-    st.table(table_rows)
