@@ -1,69 +1,127 @@
+import streamlit as st
 import random
 
-# รายชื่อผู้เล่น
-players = ["วิน", "โต๊ด", "ติน", "ต่อ", "มุก", "เฟิร์น", "กันดั้ม", "โก้"]
+# -----------------------------
+# Session State Initialization
+# -----------------------------
+if "players" not in st.session_state:
+    st.session_state.players = []
+if "teams" not in st.session_state:
+    st.session_state.teams = []
+if "current_match" not in st.session_state:
+    st.session_state.current_match = None
+if "winner_streak" not in st.session_state:
+    st.session_state.winner_streak = {"team": None, "count": 0, "first_loser": None}
+if "history" not in st.session_state:
+    st.session_state.history = []
+if "queue" not in st.session_state:
+    st.session_state.queue = []
+if "stats" not in st.session_state:
+    st.session_state.stats = {}
 
-# ฟังก์ชันสุ่มแบ่งทีม
+# -----------------------------
+# Helper Functions
+# -----------------------------
+def init_stats(players):
+    st.session_state.stats = {p: {"played": 0, "win": 0} for p in players}
+
 def make_teams(players):
-    shuffled = players[:]
-    random.shuffle(shuffled)
-    return [shuffled[i:i+2] for i in range(0, len(shuffled), 2)]
+    """สุ่มผู้เล่นแล้วแบ่งเป็นทีม (ถ้าเลขคี่ ให้สุ่มคนหนึ่งนั่งพัก)"""
+    players = players[:]
+    random.shuffle(players)
+    if len(players) % 2 == 1:
+        rest = players.pop()   # คนสุดท้ายพัก
+        st.info(f"👤 {rest} พักรอบนี้")
+    teams = [players[i:i+2] for i in range(0, len(players), 2)]
+    return teams
 
-# ฟังก์ชันแสดงทีม
-def show_teams(teams):
-    for i, team in enumerate(teams, 1):
-        print(f"ทีม {i}: {team[0]} + {team[1]}")
+def start_new_round():
+    teams = make_teams(st.session_state.players)
+    st.session_state.teams = teams
+    st.session_state.queue = teams[2:] if len(teams) > 2 else []
+    if len(teams) >= 2:
+        st.session_state.current_match = (teams[0], teams[1])
+    else:
+        st.session_state.current_match = None
+    st.session_state.winner_streak = {"team": None, "count": 0, "first_loser": None}
+    st.session_state.history = []
 
-# ฟังก์ชันจำลองการแข่งแบบสด
-def live_schedule(players):
-    streak = {}  # เก็บจำนวนครั้งที่ทีมชนะติดกัน
-    teams = make_teams(players)
-    show_teams(teams)
-    print("\nเริ่มแข่ง!")
+def update_stats(players, winner=False):
+    for p in players:
+        st.session_state.stats[p]["played"] += 1
+        if winner:
+            st.session_state.stats[p]["win"] += 1
 
-    current_team = teams[0]
-    queue = teams[1:]
-    match_no = 1
-    rounds_played = 0
-    total_rounds = len(players) // 2  # ครบรอบเมื่อทุกทีมได้ลงครบ
+def process_result(winner_side):
+    team_left, team_right = st.session_state.current_match
+    winner = team_left if winner_side == "left" else team_right
+    loser = team_right if winner_side == "left" else team_left
 
-    while True:
-        if not queue:
-            # ครบรอบแล้ว → สุ่มทีมใหม่
-            rounds_played += 1
-            if rounds_played >= total_rounds:
-                print("\n--- ครบรอบแล้ว สุ่มทีมใหม่ทั้งหมด ---")
-                streak.clear()
-                teams = make_teams(players)
-                show_teams(teams)
-                current_team = teams[0]
-                queue = teams[1:]
-                rounds_played = 0
+    # บันทึกผลการแข่งขัน
+    st.session_state.history.append(
+        f"{' & '.join(winner)} ✅ ชนะ {' & '.join(loser)} ❌"
+    )
 
-        challenger = queue.pop(0)
-        print(f"\nแมตช์ {match_no}: {current_team[0]}+{current_team[1]} VS {challenger[0]}+{challenger[1]}")
+    # อัปเดตสถิติ
+    update_stats(winner, winner=True)
+    update_stats(loser, winner=False)
 
-        winner = random.choice(["current", "challenger"])  # สุ่มผู้ชนะ
-        if winner == "current":
-            win_team = current_team
+    # อัปเดต streak
+    if st.session_state.winner_streak["team"] == winner:
+        st.session_state.winner_streak["count"] += 1
+    else:
+        st.session_state.winner_streak = {"team": winner, "count": 1, "first_loser": loser}
+
+    # ถ้าชนะ 2 ครั้งติด
+    if st.session_state.winner_streak["count"] == 2:
+        if st.session_state.queue:
+            next_team = st.session_state.queue.pop(0)
+            st.session_state.current_match = (
+                st.session_state.winner_streak["first_loser"],
+                next_team,
+            )
         else:
-            win_team = challenger
-            current_team = challenger
+            start_new_round()
+    else:
+        if st.session_state.queue:
+            next_team = st.session_state.queue.pop(0)
+            st.session_state.current_match = (winner, next_team)
+        else:
+            start_new_round()
 
-        win_key = "+".join(win_team)
-        streak[win_key] = streak.get(win_key, 0) + 1
+    # 🔄 Refresh อัตโนมัติ
+    st.rerun()
 
-        print(f"ผู้ชนะ: {win_team[0]}+{win_team[1]} (ชนะติดกัน {streak[win_key]} ครั้ง)")
+# -----------------------------
+# UI
+# -----------------------------
+st.title("🏸 ระบบจัดตารางการแข่งขันแบดมินตัน")
 
-        # ถ้าชนะติดกัน 2 ครั้ง ให้ออกไปนั่งรอ แต่ยังไม่สุ่มทีมใหม่จนกว่าจะครบทุกทีม
-        if streak[win_key] >= 2:
-            print(f"ทีม {win_team[0]}+{win_team[1]} ชนะครบ 2 ครั้ง ต้องออกไปรอก่อน!")
-            if queue:
-                current_team = queue.pop(0)
+# ใส่รายชื่อผู้เล่น
+st.subheader("ใส่รายชื่อผู้เล่น (สูงสุด 16 คน)")
+names_input = st.text_area(
+    "พิมพ์รายชื่อ (ขึ้นบรรทัดใหม่สำหรับแต่ละคน)", 
+    "วิน\nโต๊ด\nติน\nต่อ\nมุก\nเฟิร์น\nกันดั้ม\nโก้"
+)
+players = [n.strip() for n in names_input.split("\n") if n.strip()]
 
-        match_no += 1
+col_start, col_reset = st.columns(2)
+with col_start:
+    if st.button("▶️ เริ่มเกมใหม่"):
+        if len(players) < 4:
+            st.error("ต้องมีอย่างน้อย 4 คนขึ้นไป")
+        else:
+            st.session_state.players = players
+            init_stats(players)
+            start_new_round()
+            st.success("เริ่มเกมใหม่เรียบร้อย!")
 
+with col_reset:
+    if st.button("🔄 รีเซ็ตทั้งหมด"):
+        for key in list(st.session_state.keys()):
+            del st.session_state[key]
+        st.rerun()
 
-# เริ่มใช้งาน live schedule
-if __name__ == "__main__":
-    live_schedule(players)
+# แสดงแมตช์ปัจจุบัน
+if st.session_state.current_match:
+    team_left, team_right = st.sessi
