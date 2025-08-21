@@ -10,7 +10,7 @@ ss = st.session_state
 DEFAULTS = {
     "players": [],
     "current_matches": [],
-    "queues": {},  # คิว per court {0: [...], 1: [...]} 
+    "queues": {},  # คิว per court {0: [...], 1: [...]}
     "winner_streaks": {},
     "history": [],
     "stats": {},
@@ -24,10 +24,11 @@ for k, v in DEFAULTS.items():
 
 
 def force_rerun():
+    """พยายาม rerun แบบไม่ให้แครชในทุกเวอร์ชัน"""
     try:
         st.rerun()
-    except:
-        st.experimental_rerun()
+    except Exception:
+        pass
 
 
 def init_stats(players: List[str]):
@@ -68,10 +69,11 @@ def start_new_round():
         if len(teams) >= 2:
             left, right = teams[0], teams[1]
             teams = teams[2:]
+            # กันซ้ำแมตช์กับคอร์ทเดียวกัน
             if i < len(ss.last_matches):
                 last_left, last_right = ss.last_matches[i]
                 if {tuple(left), tuple(right)} == {tuple(last_left), tuple(last_right)}:
-                    if teams:
+                    if len(teams) >= 2:
                         random.shuffle(teams)
                         left, right = teams[0], teams[1]
                         teams = teams[2:]
@@ -145,31 +147,52 @@ def process_result(winner_side: str, court_index: int):
     force_rerun()
 
 
+def _pop_next_team_from_all_queues():
+    """ดึงทีมจากคิวแรกที่มีของทุกคอร์ท (ลำดับคอร์ทต่ำไปสูง)"""
+    for q_idx in sorted(ss.queues.keys()):
+        if ss.queues[q_idx]:
+            return ss.queues[q_idx].pop(0)
+    return None
+
+
 def adjust_courts():
-    """ปรับจำนวนคอร์ทแบบ dynamic"""
+    """ปรับจำนวนคอร์ทแบบ dynamic (เพิ่ม/ลดคอร์ท พร้อมจัดคิวให้ถูกต้อง)"""
+    # เติมคีย์ queue ที่หายไป (กัน keyerror)
+    for i in range(ss.num_courts):
+        ss.queues.setdefault(i, [])
+
     current = len(ss.current_matches)
-    if ss.num_courts > current:  # เพิ่มคอร์ท
-        for _ in range(ss.num_courts - current):
-            if sum(len(v) for v in ss.queues.values()) >= 2:
-                # ดึงจาก queue รวม
-                all_queue = []
-                for q in ss.queues.values():
-                    all_queue.extend(q)
-                if len(all_queue) >= 2:
-                    left, right = all_queue.pop(0), all_queue.pop(0)
-                    ss.current_matches.append((left, right))
-                    ss.queues[len(ss.current_matches) - 1] = []
-                    ss.winner_streaks[len(ss.current_matches) - 1] = {
-                        "team": None,
-                        "count": 0,
-                        "first_loser": None,
-                    }
-    elif ss.num_courts < current:  # ลดคอร์ท
+
+    # เพิ่มคอร์ท
+    if ss.num_courts > current:
+        need = ss.num_courts - current
+        for _ in range(need):
+            t1 = _pop_next_team_from_all_queues()
+            t2 = _pop_next_team_from_all_queues()
+            if t1 and t2:
+                ss.current_matches.append((t1, t2))
+                new_idx = len(ss.current_matches) - 1
+                ss.queues.setdefault(new_idx, [])
+                ss.winner_streaks[new_idx] = {
+                    "team": None,
+                    "count": 0,
+                    "first_loser": None,
+                }
+            else:
+                break  # ทีมไม่พอ ก็หยุดเพิ่ม
+
+    # ลดคอร์ท
+    elif ss.num_courts < current:
         while len(ss.current_matches) > ss.num_courts:
             left, right = ss.current_matches.pop()
-            ss.queues.setdefault(0, []).insert(0, left)
-            ss.queues[0].insert(0, right)
+            # ส่งทีมกลับเข้าคิวคอร์ท 0 เพื่อไม่หาย
+            ss.queues.setdefault(0, []).insert(0, right)
+            ss.queues[0].insert(0, left)
             ss.winner_streaks.pop(len(ss.current_matches), None)
+
+    # sync last_matches ความยาวให้ไม่สั้นกว่า current_matches (กัน index error ภายหลัง)
+    while len(ss.last_matches) < len(ss.current_matches):
+        ss.last_matches.append(ss.current_matches[-1])
 
 
 # -----------------------------
@@ -206,8 +229,10 @@ with c3:
 if ss.get("resting_player"):
     st.info(f"👤 ผู้เล่นที่พักรอบนี้: **{ss.resting_player}**")
 
+# ปรับจำนวนคอร์ทให้ตรงกับ slider เสมอ
 adjust_courts()
 
+# แสดงผลแบบ Grid per court
 if ss.get("current_matches"):
     cols = st.columns(ss.num_courts)
     for i, (left, right) in enumerate(ss.current_matches):
@@ -216,18 +241,22 @@ if ss.get("current_matches"):
             st.markdown(
                 f"**ทีมซ้าย:** {_fmt_team(left)} 🆚 **ทีมขวา:** {_fmt_team(right)}"
             )
-            c1, c2 = st.columns(2)
-            with c1:
+            b1, b2 = st.columns(2)
+            with b1:
                 if st.button(f"✅ ทีมซ้ายชนะ (คอร์ท {i+1})"):
                     process_result("left", i)
-            with c2:
+            with b2:
                 if st.button(f"✅ ทีมขวาชนะ (คอร์ท {i+1})"):
                     process_result("right", i)
 
+            # คิวของคอร์ทนั้น ๆ
             if ss.queues.get(i):
                 st.caption("คิวถัดไป:")
                 for j, t in enumerate(ss.queues[i], 1):
                     st.write(f"{j}. {_fmt_team(t)}")
+else:
+    if ss.get("players"):
+        st.warning("ยังไม่มีแมตช์ — กดเริ่มเกมใหม่")
 
 if ss.get("history"):
     st.subheader("📜 ประวัติการแข่งขัน")
