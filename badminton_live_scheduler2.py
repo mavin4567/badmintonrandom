@@ -56,11 +56,13 @@ if st.session_state.queue and st.session_state.current_team:
             loser = challenger
             # challenger แพ้ → เก็บไว้ใน loser_pool
             st.session_state.loser_pool.append(challenger)
+            # current_team อยู่ต่อ
         elif win_choice == "challenger":
             winner = challenger
             loser = st.session_state.current_team
             # current แพ้ → เก็บไว้ใน loser_pool
             st.session_state.loser_pool.append(st.session_state.current_team)
+            # challenger ขึ้นมาเป็น current_team
             st.session_state.current_team = challenger
         else:
             winner = None
@@ -79,12 +81,11 @@ if st.session_state.queue and st.session_state.current_team:
             })
 
             # บันทึกผู้ชนะล่าสุด
-            st.session_state.last_winner = "current"
+            st.session_state.last_winner = win_choice
 
             # ถ้าชนะติดกัน 2 ครั้ง → ออกไปพัก และทีมใหม่เจอทีมที่แพ้รอบแรก
             if st.session_state.streak[key] >= 2:
                 st.warning(f"ทีม {winner[0]}+{winner[1]} ชนะ 2 แมตช์ติด ต้องออกไปรอก่อน!")
-                st.session_state.queue.pop(0)  # challenger ออกจากคิวแล้ว
 
                 if st.session_state.queue:
                     # ทีมใหม่จากคิวมาแทนที่
@@ -96,7 +97,7 @@ if st.session_state.queue and st.session_state.current_team:
                     # ถ้าไม่มีทีมเหลือแล้ว = ครบรอบ
                     st.session_state.current_team = None
             else:
-                # แมตช์ปกติ → challenger เล่นไปแล้ว เอาออกจากคิว
+                # challenger เล่นไปแล้ว เอาออกจากคิว
                 st.session_state.queue.pop(0)
 
             # ไปแมตช์ถัดไป
