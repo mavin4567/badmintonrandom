@@ -1,6 +1,5 @@
 import streamlit as st
 import random
-import graphviz
 
 # รายชื่อผู้เล่น
 players = ["วิน", "โต๊ด", "ติน", "ต่อ", "มุก", "เฟิร์น", "กันดั้ม", "โก้"]
@@ -110,26 +109,10 @@ if st.session_state.queue and st.session_state.current_team:
         else:
             st.warning("❗ ต้องเลือกทีมที่ชนะก่อน ถึงจะกดต่อไปได้")
 
-# โหมดแสดงผลการแข่งขัน
-st.subheader("📊 โหมดแสดงผลการแข่งขัน")
-view_mode = st.radio("เลือกโหมดแสดงผล", ["ข้อความ", "Bracket View"])
-
-if view_mode == "ข้อความ":
-    if st.session_state.history:
-        for record in st.session_state.history[::-1]:
-            st.write(f"แมตช์ {record['แมตช์']}: 🏆 {record['ทีมชนะ']} ชนะ ❌ {record['ทีมแพ้']}")
+# โหมดแสดงผลการแข่งขัน (ข้อความ)
+st.subheader("📊 ประวัติผลการแข่งขัน")
+if st.session_state.history:
+    for record in st.session_state.history[::-1]:
+        st.write(f"แมตช์ {record['แมตช์']}: 🏆 {record['ทีมชนะ']} ชนะ ❌ {record['ทีมแพ้']}")
 else:
-    if st.session_state.history:
-        dot = graphviz.Digraph()
-        for record in st.session_state.history:
-            match_label = f"Match {record['แมตช์']}"
-            winner = record['ทีมชนะ']
-            loser = record['ทีมแพ้']
-            dot.node(winner, winner, shape="box", style="filled", color="lightgreen")
-            dot.node(loser, loser, shape="box", style="filled", color="lightcoral")
-            dot.edge(loser, match_label)
-            dot.edge(winner, match_label, color="green")
-            dot.node(match_label, match_label, shape="ellipse")
-        st.graphviz_chart(dot)
-    else:
-        st.info("ยังไม่มีผลการแข่งขันให้แสดง")
+    st.info("ยังไม่มีผลการแข่งขัน")
