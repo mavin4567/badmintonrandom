@@ -21,6 +21,7 @@ def reset_game():
     st.session_state.match_no = 1
     st.session_state.rounds_played = 0
     st.session_state.total_rounds = len(players)//2
+    st.session_state.history = []  # เก็บประวัติผลการแข่งขัน
 
 # เริ่มต้นค่าใน session_state
 if "teams" not in st.session_state:
@@ -54,13 +55,22 @@ if st.session_state.queue:
     if win_choice:
         if win_choice == "current":
             winner = st.session_state.current_team
+            loser = challenger
         else:
             winner = challenger
+            loser = st.session_state.current_team
             st.session_state.current_team = challenger
 
         key = "+".join(winner)
         st.session_state.streak[key] = st.session_state.streak.get(key, 0) + 1
         st.success(f"ผู้ชนะ: {winner[0]} + {winner[1]} (ชนะติดกัน {st.session_state.streak[key]} ครั้ง)")
+
+        # เก็บประวัติการแข่งขัน
+        st.session_state.history.append({
+            "แมตช์": st.session_state.match_no,
+            "ทีมชนะ": f"{winner[0]} + {winner[1]}",
+            "ทีมแพ้": f"{loser[0]} + {loser[1]}"
+        })
 
         # ถ้าชนะติดกัน 2 ครั้ง → ออกไปพัก
         if st.session_state.streak[key] >= 2:
@@ -81,3 +91,9 @@ if st.session_state.queue:
             if st.session_state.rounds_played >= st.session_state.total_rounds:
                 st.info("🎲 ครบรอบแล้ว! สุ่มทีมใหม่ทั้งหมด")
                 reset_game()
+
+# แสดงประวัติการแข่งขันย้อนหลัง
+if st.session_state.history:
+    st.subheader("📜 ประวัติผลการแข่งขัน")
+    for record in st.session_state.history[::-1]:
+        st.write(f"แมตช์ {record['แมตช์']}: 🏆 {record['ทีมชนะ']} ชนะ ❌ {record['ทีมแพ้']}")
