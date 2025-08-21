@@ -165,4 +165,42 @@ with c3:
 if ss.get("resting_player"):
     st.info(f"👤 ผู้เล่นที่พัก: **{ss.resting_player}**")
 
-if ss.get("current_match_
+if ss.get("current_match"):
+    left, right = ss.current_match
+    st.subheader("🎯 แมตช์ปัจจุบัน")
+    st.markdown(f"**ทีมซ้าย:** {_fmt_team(left)}  🆚  **ทีมขวา:** {_fmt_team(right)}")
+
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("✅ ทีมซ้ายชนะ"):
+            process_result("left")
+    with col2:
+        if st.button("✅ ทีมขวาชนะ"):
+            process_result("right")
+
+    if ss.get("queue"):
+        st.caption("📌 คิวถัดไป:")
+        for t in ss.queue:
+            st.write(f"- {_fmt_team(t)}")
+else:
+    if ss.get("players"):
+        st.warning("ยังไม่มีแมตช์ → กด 'เริ่มเกมใหม่'")
+
+if ss.get("history"):
+    st.subheader("📜 ประวัติการแข่งขัน")
+    for i, line in enumerate(ss.history, 1):
+        st.write(f"{i}. {line}")
+
+if ss.get("stats"):
+    st.subheader("📊 สถิติผู้เล่น")
+    ordered = sorted(ss.stats.items(), key=lambda kv: (kv[1]["played"], -kv[1]["win"]))
+    rows = [
+        {
+            "ผู้เล่น": n,
+            "จำนวนแมตช์": d["played"],
+            "ชนะ": d["win"],
+            "อัตราชนะ (%)": round((d["win"] / d["played"] * 100) if d["played"] else 0, 1),
+        }
+        for n, d in ordered
+    ]
+    st.table(rows)
