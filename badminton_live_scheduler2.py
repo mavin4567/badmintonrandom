@@ -53,7 +53,7 @@ if st.session_state.queue:
     if col2.button("ทีมขวาชนะ ✅", key=f"right_{st.session_state.match_no}"):
         win_choice = "challenger"
     if col3.button("➡️ ต่อไป", key=f"next_{st.session_state.match_no}"):
-        win_choice = st.session_state.last_winner  # ใช้ผลชนะครั้งก่อนอัตโนมัติ
+        win_choice = st.session_state.last_winner
 
     if win_choice:
         if win_choice == "current":
@@ -64,7 +64,6 @@ if st.session_state.queue:
             loser = st.session_state.current_team
             st.session_state.current_team = challenger
         else:
-            st.warning("ยังไม่มีผลผู้ชนะก่อนหน้า กดเลือกทีมที่ชนะก่อนครับ")
             winner = None
             loser = None
 
@@ -81,7 +80,7 @@ if st.session_state.queue:
             })
 
             # บันทึกผู้ชนะล่าสุด
-            st.session_state.last_winner = win_choice
+            st.session_state.last_winner = "current"
 
             # ถ้าชนะติดกัน 2 ครั้ง → ออกไปพัก
             if st.session_state.streak[key] >= 2:
@@ -102,6 +101,8 @@ if st.session_state.queue:
                 if st.session_state.rounds_played >= st.session_state.total_rounds:
                     st.info("🎲 ครบรอบแล้ว! สุ่มทีมใหม่ทั้งหมด")
                     reset_game()
+        else:
+            st.warning("❗ ต้องเลือกทีมที่ชนะก่อน ถึงจะกดต่อไปได้")
 
 # แสดงประวัติการแข่งขันย้อนหลัง
 if st.session_state.history:
