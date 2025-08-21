@@ -133,7 +133,7 @@ def process_result(winner_side: str):
 # -----------------------------
 # UI
 # -----------------------------
-st.title("🏸 Badminton Scheduler — Fair Winner Mode")
+st.title("🏸 Badminton Scheduler ก๊วนลุงๆ🧔🏻")
 
 names_input = st.text_area("👥 ใส่รายชื่อผู้เล่น (ขึ้นบรรทัดใหม่)", "", height=180)
 players = [n.strip() for n in names_input.split("\n") if n.strip()]
