@@ -167,3 +167,72 @@ with c_start:
         if len(players) < 4:
             st.error("ต้องมีอย่างน้อย 4 คนขึ้นไป")
         elif len(players) > 16:
+            st.error("รองรับได้สูงสุด 16 คน")
+        else:
+            ss.players = players
+            init_stats(players)
+            start_new_round()
+            st.success("เริ่มเกมใหม่เรียบร้อย!")
+            force_rerun()
+
+with c_reset:
+    if st.button("♻️ Reset ทั้งหมด"):
+        # ลบคีย์แบบปลอดภัยทุกเวอร์ชัน
+        for k in list(ss.keys()):
+            del ss[k]
+        st.success("ล้างสถานะทั้งหมดแล้ว")
+        force_rerun()
+
+with c_refresh:
+    if st.button("🔃 Refresh สถานะ"):
+        force_rerun()
+
+# ผู้เล่นที่พัก
+if ss.get("resting_player"):
+    st.info(f"👤 ผู้เล่นที่พักรอบนี้: **{ss.resting_player}**")
+
+# แมตช์ปัจจุบัน
+m = ss.get("current_match")
+if _valid_match(m):
+    left, right = m
+    st.subheader("🎯 แมตช์ปัจจุบัน")
+    st.markdown(f"**ทีมซ้าย:** {_fmt_team(left)}  \t🆚\t  **ทีมขวา:** {_fmt_team(right)}")
+
+    c1, c2 = st.columns(2)
+    with c1:
+        if st.button("✅ ทีมซ้ายชนะ"):
+            process_result("left")
+    with c2:
+        if st.button("✅ ทีมขวาชนะ"):
+            process_result("right")
+
+    # คิวถัดไป
+    if isinstance(ss.get("queue"), list) and ss.queue:
+        st.caption("คิวถัดไป:")
+        for i, t in enumerate(ss.queue, 1):
+            if isinstance(t, (list, tuple)):
+                st.write(f"• {_fmt_team(t)}")
+else:
+    if ss.get("players"):
+        st.warning("ยังไม่มีแมตช์ให้เล่น — กด \"เริ่มเกมใหม่\" เพื่อเริ่มรอบใหม่")
+
+# ประวัติ
+if isinstance(ss.get("history"), list) and ss.history:
+    st.subheader("📜 ประวัติการแข่งขัน")
+    for i, line in enumerate(ss.history, 1):
+        st.write(f"{i}. {line}")
+
+# สถิติ
+if isinstance(ss.get("stats"), dict) and ss.stats:
+    st.subheader("📊 สถิติผู้เล่น")
+    ordered = sorted(ss.stats.items(), key=lambda kv: (kv[1].get("played", 0), -kv[1].get("win", 0)))
+    table_rows = [
+        {
+            "ผู้เล่น": name,
+            "จำนวนแมตช์": data.get("played", 0),
+            "ชนะ": data.get("win", 0),
+            "อัตราชนะ (%)": round((data.get("win", 0) / data.get("played", 0) * 100) if data.get("played", 0) else 0, 1),
+        }
+        for name, data in ordered
+    ]
+    st.table(table_rows)
