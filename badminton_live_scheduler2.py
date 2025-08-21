@@ -86,12 +86,14 @@ if st.session_state.queue and st.session_state.current_team:
                 st.warning(f"ทีม {winner[0]}+{winner[1]} ชนะ 2 แมตช์ติด ต้องออกไปรอก่อน!")
                 st.session_state.queue.pop(0)  # challenger ออกจากคิวแล้ว
 
-                if st.session_state.queue and st.session_state.loser_pool:
+                if st.session_state.queue:
                     # ทีมใหม่จากคิวมาแทนที่
                     st.session_state.current_team = st.session_state.queue.pop(0)
-                    # เจอกับทีมที่แพ้รอบแรก
-                    st.session_state.queue.insert(0, st.session_state.loser_pool.pop(0))
+                    # ถ้ามีทีมแพ้รอบแรก → ส่งเข้ามาเจอ
+                    if st.session_state.loser_pool:
+                        st.session_state.queue.insert(0, st.session_state.loser_pool.pop(0))
                 else:
+                    # ถ้าไม่มีทีมเหลือแล้ว = ครบรอบ
                     st.session_state.current_team = None
             else:
                 # แมตช์ปกติ → challenger เล่นไปแล้ว เอาออกจากคิว
