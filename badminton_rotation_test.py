@@ -2,6 +2,13 @@ import streamlit as st
 import random
 from typing import List, Optional
 
+# (ออปชัน) Auto-refresh ถ้ามีปลั๊กอิน
+try:
+    from streamlit_autorefresh import st_autorefresh
+    HAS_AUTO = True
+except Exception:
+    HAS_AUTO = False
+
 # ============================================================
 # 🏸 Badminton Scheduler (Fair Winner + Balanced Rotation)
 # ============================================================
@@ -30,10 +37,10 @@ for k, v in DEFAULTS.items():
 def force_rerun():
     try:
         st.rerun()
-    except:
+    except Exception:
         try:
             st.experimental_rerun()
-        except:
+        except Exception:
             pass
 
 def init_stats(players: List[str]):
@@ -104,16 +111,13 @@ def process_result(winner_side: str):
     _update_stats(winner, is_winner=True)
     _update_stats(loser, is_winner=False)
 
-    # เก็บ loser ไว้ในคิวเสมอ
-    ss.queue.append(loser)
-
     # จัดการ streak
     if ss.winner_streak["team"] == winner:
         ss.winner_streak["count"] += 1
     else:
         ss.winner_streak = {"team": winner, "count": 1, "first_loser": loser}
 
-    # Case: ชนะ 2 ติด → ต้องออก
+    # ชนะ 2 ติด → ผู้ชนะออก แล้วให้ "ทีมที่แพ้ครั้งแรกของสตรีค" เจอกับทีมใหม่จากคิว
     if ss.winner_streak["count"] >= 2:
         first_loser = ss.winner_streak["first_loser"]
         if ss.queue:
@@ -123,7 +127,7 @@ def process_result(winner_side: str):
         else:
             start_new_round()
     else:
-        # ทีมชนะอยู่ต่อ + หาคู่ใหม่
+        # ทีมชนะอยู่ต่อ เจอกับทีมใหม่จากคิว
         if ss.queue:
             incoming = ss.queue.pop(0)
             ss.current_match = (winner, incoming)
@@ -131,7 +135,6 @@ def process_result(winner_side: str):
             start_new_round()
 
     ss.last_match = ss.current_match
-    force_rerun()
 
 # -----------------------------
 # UI
@@ -139,8 +142,9 @@ def process_result(winner_side: str):
 st.set_page_config(page_title="Badminton Scheduler", layout="centered")
 st.title("🏸 Badminton Scheduler ก๊วนลุงๆ🧔🏻")
 
-# 🔄 Refresh อัตโนมัติทุก 10 วินาที
-st_autorefresh = st.experimental_autorefresh(interval=10_000, limit=None, key="autorefresh")
+# (ออปชัน) Auto-refresh ถ้ามีปลั๊กอิน
+if HAS_AUTO:
+    st_autorefresh(interval=10_000, key="autorefresh")
 
 names_input = st.text_area("👥 ใส่รายชื่อผู้เล่น (ขึ้นบรรทัดใหม่)", "", height=180)
 players = [n.strip() for n in names_input.split("\n") if n.strip()]
@@ -157,16 +161,16 @@ with c1:
             init_stats(players)
             start_new_round()
             st.success("เริ่มเกมใหม่แล้ว!")
-            force_rerun()
+            st.rerun()  # <- rerun ทันที
 with c2:
     if st.button("♻️ Reset"):
         for k in list(ss.keys()):
             del ss[k]
         st.success("ล้างสถานะแล้ว")
-        force_rerun()
+        st.rerun()
 with c3:
     if st.button("🔃 Refresh"):
-        force_rerun()
+        st.rerun()
 
 if ss.get("resting_player"):
     st.info(f"👤 ผู้เล่นที่พักรอบนี้: **{ss.resting_player}**")
@@ -179,9 +183,11 @@ if ss.get("current_match"):
     with c1:
         if st.button("✅ ทีมซ้ายชนะ"):
             process_result("left")
+            st.rerun()  # <- rerun ทันทีหลังบันทึกผล
     with c2:
         if st.button("✅ ทีมขวาชนะ"):
             process_result("right")
+            st.rerun()  # <- rerun ทันทีหลังบันทึกผล
     if ss.get("queue"):
         st.caption("คิวถัดไป:")
         for i, t in enumerate(ss.queue, 1):
