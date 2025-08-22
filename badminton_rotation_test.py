@@ -2,13 +2,6 @@ import streamlit as st
 import random
 from typing import List, Optional
 
-# (ออปชัน) Auto-refresh ถ้ามีปลั๊กอิน
-try:
-    from streamlit_autorefresh import st_autorefresh
-    HAS_AUTO = True
-except Exception:
-    HAS_AUTO = False
-
 # ============================================================
 # 🏸 Badminton Scheduler (Fair Winner + Balanced Rotation)
 # ============================================================
@@ -26,6 +19,7 @@ DEFAULTS = {
     "stats": {},
     "resting_player": None,
     "last_match": None,   # ป้องกันไม่ให้เจอคู่เดิมซ้ำทันที
+    "consecutive_games": {},  # บันทึกจำนวนครั้งที่เล่นติดกัน
 }
 for k, v in DEFAULTS.items():
     if k not in ss:
@@ -37,19 +31,27 @@ for k, v in DEFAULTS.items():
 def force_rerun():
     try:
         st.rerun()
-    except Exception:
+    except:
         try:
             st.experimental_rerun()
-        except Exception:
+        except:
             pass
 
 def init_stats(players: List[str]):
     ss.stats = {p: {"played": 0, "win": 0} for p in players}
+    ss.consecutive_games = {p: 0 for p in players}
 
 def _choose_resting_player(players: List[str]) -> Optional[str]:
-    """พักจากคนที่เล่นเยอะที่สุด"""
+    """เลือกคนพัก: คนที่เล่นเยอะสุด หรือเล่นติดกันเยอะสุด"""
     if len(players) % 2 == 0:
         return None
+
+    # ถ้าใครเล่นติดกัน >= 2 ตาต้องพักก่อน
+    force_rest = [p for p in players if ss.consecutive_games.get(p, 0) >= 2]
+    if force_rest:
+        return random.choice(force_rest)
+
+    # ถ้าไม่มี → เลือกคนที่เล่นเยอะที่สุด
     max_played = max(ss.stats.get(p, {"played": 0})["played"] for p in players)
     candidates = [p for p in players if ss.stats[p]["played"] == max_played]
     return random.choice(candidates)
@@ -90,6 +92,13 @@ def start_new_round():
     ss.queue = teams[2:]
     ss.winner_streak = {"team": None, "count": 0, "first_loser": None}
 
+    # reset consecutive count
+    for p in ss.consecutive_games:
+        ss.consecutive_games[p] = 0
+    for team in [first, second]:
+        for p in team:
+            ss.consecutive_games[p] += 1
+
 def _update_stats(team: List[str], *, is_winner: bool):
     for p in team:
         ss.stats[p]["played"] += 1
@@ -117,7 +126,7 @@ def process_result(winner_side: str):
     else:
         ss.winner_streak = {"team": winner, "count": 1, "first_loser": loser}
 
-    # ชนะ 2 ติด → ผู้ชนะออก แล้วให้ "ทีมที่แพ้ครั้งแรกของสตรีค" เจอกับทีมใหม่จากคิว
+    # ถ้าชนะ 2 ติด → ต้องออก
     if ss.winner_streak["count"] >= 2:
         first_loser = ss.winner_streak["first_loser"]
         if ss.queue:
@@ -127,24 +136,28 @@ def process_result(winner_side: str):
         else:
             start_new_round()
     else:
-        # ทีมชนะอยู่ต่อ เจอกับทีมใหม่จากคิว
+        # ทีมชนะอยู่ต่อ แต่ต้องเช็คไม่ให้เล่นติดเกิน 2
         if ss.queue:
             incoming = ss.queue.pop(0)
             ss.current_match = (winner, incoming)
         else:
             start_new_round()
 
+    # update consecutive count
+    for p in ss.consecutive_games:
+        ss.consecutive_games[p] = 0
+    if ss.current_match:
+        for team in ss.current_match:
+            for p in team:
+                ss.consecutive_games[p] += 1
+
     ss.last_match = ss.current_match
+    force_rerun()
 
 # -----------------------------
 # UI
 # -----------------------------
-st.set_page_config(page_title="Badminton Scheduler", layout="centered")
 st.title("🏸 Badminton Scheduler ก๊วนลุงๆ🧔🏻")
-
-# (ออปชัน) Auto-refresh ถ้ามีปลั๊กอิน
-if HAS_AUTO:
-    st_autorefresh(interval=10_000, key="autorefresh")
 
 names_input = st.text_area("👥 ใส่รายชื่อผู้เล่น (ขึ้นบรรทัดใหม่)", "", height=180)
 players = [n.strip() for n in names_input.split("\n") if n.strip()]
@@ -161,16 +174,16 @@ with c1:
             init_stats(players)
             start_new_round()
             st.success("เริ่มเกมใหม่แล้ว!")
-            st.rerun()  # <- rerun ทันที
+            force_rerun()
 with c2:
     if st.button("♻️ Reset"):
         for k in list(ss.keys()):
             del ss[k]
         st.success("ล้างสถานะแล้ว")
-        st.rerun()
+        force_rerun()
 with c3:
     if st.button("🔃 Refresh"):
-        st.rerun()
+        force_rerun()
 
 if ss.get("resting_player"):
     st.info(f"👤 ผู้เล่นที่พักรอบนี้: **{ss.resting_player}**")
@@ -183,11 +196,9 @@ if ss.get("current_match"):
     with c1:
         if st.button("✅ ทีมซ้ายชนะ"):
             process_result("left")
-            st.rerun()  # <- rerun ทันทีหลังบันทึกผล
     with c2:
         if st.button("✅ ทีมขวาชนะ"):
             process_result("right")
-            st.rerun()  # <- rerun ทันทีหลังบันทึกผล
     if ss.get("queue"):
         st.caption("คิวถัดไป:")
         for i, t in enumerate(ss.queue, 1):
