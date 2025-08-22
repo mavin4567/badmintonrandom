@@ -1,69 +1,172 @@
+import streamlit as st
 import random
 
-# รายชื่อผู้เล่น
-players = ["วิน", "โต๊ด", "ติน", "ต่อ", "มุก", "เฟิร์น", "กันดั้ม", "โก้"]
+# -----------------------------
+# Session State Initialization
+# -----------------------------
+if "players" not in st.session_state:
+    st.session_state.players = []
+if "matches" not in st.session_state:
+    st.session_state.matches = []
+if "current_match" not in st.session_state:
+    st.session_state.current_match = None
+if "win_streak" not in st.session_state:
+    st.session_state.win_streak = {}
+if "games_played" not in st.session_state:
+    st.session_state.games_played = {}
+if "resting" not in st.session_state:
+    st.session_state.resting = None
 
-# ฟังก์ชันสุ่มแบ่งทีม
+
+# -----------------------------
+# Utility Functions
+# -----------------------------
+def reset_game():
+    st.session_state.matches = []
+    st.session_state.current_match = None
+    st.session_state.win_streak = {p: 0 for p in st.session_state.players}
+    st.session_state.games_played = {p: 0 for p in st.session_state.players}
+    st.session_state.resting = None
+    make_new_round()
+
+
 def make_teams(players):
-    shuffled = players[:]
-    random.shuffle(shuffled)
-    return [shuffled[i:i+2] for i in range(0, len(shuffled), 2)]
+    random.shuffle(players)
+    teams = [players[i:i+2] for i in range(0, len(players), 2)]
+    return teams
 
-# ฟังก์ชันแสดงทีม
-def show_teams(teams):
-    for i, team in enumerate(teams, 1):
-        print(f"ทีม {i}: {team[0]} + {team[1]}")
 
-# ฟังก์ชันจำลองการแข่งแบบสด
-def live_schedule(players):
-    streak = {}  # เก็บจำนวนครั้งที่ทีมชนะติดกัน
+def make_new_round():
+    players = st.session_state.players.copy()
+
+    # ถ้าจำนวนคนเป็นคี่ → ให้พักคนที่เล่นเยอะที่สุด
+    if len(players) % 2 == 1:
+        most_played = max(st.session_state.games_played, key=st.session_state.games_played.get)
+        st.session_state.resting = most_played
+        players.remove(most_played)
+    else:
+        st.session_state.resting = None
+
     teams = make_teams(players)
-    show_teams(teams)
-    print("\nเริ่มแข่ง!")
 
-    current_team = teams[0]
-    queue = teams[1:]
-    match_no = 1
-    rounds_played = 0
-    total_rounds = len(players) // 2  # ครบรอบเมื่อทุกทีมได้ลงครบ
+    # สร้างแมตช์ใหม่จากทีม
+    st.session_state.matches = []
+    for i in range(0, len(teams), 2):
+        if i+1 < len(teams):
+            st.session_state.matches.append((teams[i], teams[i+1]))
 
-    while True:
-        if not queue:
-            # ครบรอบแล้ว → สุ่มทีมใหม่
-            rounds_played += 1
-            if rounds_played >= total_rounds:
-                print("\n--- ครบรอบแล้ว สุ่มทีมใหม่ทั้งหมด ---")
-                streak.clear()
-                teams = make_teams(players)
-                show_teams(teams)
-                current_team = teams[0]
-                queue = teams[1:]
-                rounds_played = 0
+    if st.session_state.matches:
+        st.session_state.current_match = st.session_state.matches.pop(0)
+    else:
+        st.session_state.current_match = None
 
-        challenger = queue.pop(0)
-        print(f"\nแมตช์ {match_no}: {current_team[0]}+{current_team[1]} VS {challenger[0]}+{challenger[1]}")
 
-        winner = random.choice(["current", "challenger"])  # สุ่มผู้ชนะ
-        if winner == "current":
-            win_team = current_team
+def process_result(winner_side):
+    match = st.session_state.current_match
+    if not match:
+        return
+
+    left, right = match
+    winner = left if winner_side == "left" else right
+    loser = right if winner_side == "left" else left
+
+    # update games played
+    for p in winner + loser:
+        st.session_state.games_played[p] += 1
+
+    # update win streak
+    for p in winner:
+        st.session_state.win_streak[p] += 1
+    for p in loser:
+        st.session_state.win_streak[p] = 0
+
+    # ถ้าชนะติด 2 ครั้ง → ต้องออก
+    if all(st.session_state.win_streak[p] >= 2 for p in winner):
+        for p in winner:
+            st.session_state.win_streak[p] = 0
+        survivor = None
+    else:
+        survivor = winner
+
+    # คนใหม่เข้ามาแทนที่
+    available = [p for p in st.session_state.players if p not in winner + loser]
+    if st.session_state.resting:
+        available.append(st.session_state.resting)
+
+    if available:
+        # เลือกคนเล่นน้อยสุดเข้ามา
+        sorted_players = sorted(available, key=lambda x: st.session_state.games_played[x])
+        new_players = sorted_players[:len(loser)]
+    else:
+        new_players = []
+
+    if survivor:
+        st.session_state.current_match = (survivor, new_players)
+    else:
+        if len(new_players) == 4:
+            st.session_state.current_match = (new_players[:2], new_players[2:])
         else:
-            win_team = challenger
-            current_team = challenger
-
-        win_key = "+".join(win_team)
-        streak[win_key] = streak.get(win_key, 0) + 1
-
-        print(f"ผู้ชนะ: {win_team[0]}+{win_team[1]} (ชนะติดกัน {streak[win_key]} ครั้ง)")
-
-        # ถ้าชนะติดกัน 2 ครั้ง ให้ออกไปนั่งรอ แต่ยังไม่สุ่มทีมใหม่จนกว่าจะครบทุกทีม
-        if streak[win_key] >= 2:
-            print(f"ทีม {win_team[0]}+{win_team[1]} ชนะครบ 2 ครั้ง ต้องออกไปรอก่อน!")
-            if queue:
-                current_team = queue.pop(0)
-
-        match_no += 1
+            make_new_round()
 
 
-# เริ่มใช้งาน live schedule
-if __name__ == "__main__":
-    live_schedule(players)
+# -----------------------------
+# UI
+# -----------------------------
+st.title("🏸 Badminton Match Rotation")
+
+# Input players
+if not st.session_state.players:
+    st.subheader("ใส่รายชื่อผู้เล่น (สูงสุด 16 คน, กด Enter เพื่อขึ้นบรรทัดใหม่)")
+    names_text = st.text_area("รายชื่อผู้เล่น", "")
+    if st.button("เริ่มเกม"):
+        players = [n.strip() for n in names_text.split("\n") if n.strip()]
+        if 2 <= len(players) <= 16:
+            st.session_state.players = players
+            reset_game()
+            st.rerun()
+        else:
+            st.warning("กรุณาใส่ผู้เล่นระหว่าง 2 ถึง 16 คน")
+else:
+    # Current Match
+    if st.session_state.current_match:
+        left, right = st.session_state.current_match
+        col1, col2, col3 = st.columns([1, 1, 1])
+
+        with col1:
+            st.subheader("ทีมซ้าย")
+            st.write(", ".join(left))
+            if st.button("✅ ทีมซ้ายชนะ"):
+                process_result("left")
+                st.rerun()
+
+        with col2:
+            st.subheader("VS")
+
+        with col3:
+            st.subheader("ทีมขวา")
+            st.write(", ".join(right))
+            if st.button("✅ ทีมขวาชนะ"):
+                process_result("right")
+                st.rerun()
+
+    else:
+        st.info("รอบนี้จบแล้ว ✅ เริ่มรอบใหม่...")
+        if st.button("เริ่มรอบใหม่"):
+            make_new_round()
+            st.rerun()
+
+    # Stats
+    st.subheader("📊 สถิติผู้เล่น")
+    for p in st.session_state.players:
+        st.write(f"{p}: เล่น {st.session_state.games_played[p]} ครั้ง | Win Streak: {st.session_state.win_streak[p]}")
+
+    if st.session_state.resting:
+        st.info(f"🛑 พัก: {st.session_state.resting}")
+
+    # Controls
+    st.subheader("⚙️ การจัดการ")
+    if st.button("🔄 Reset เกม"):
+        reset_game()
+        st.rerun()
+    if st.button("🔃 Refresh"):
+        st.rerun()
