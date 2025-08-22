@@ -227,4 +227,3 @@ if ss.get("stats"):
         })
 
     st.table(table_data)
-    )
