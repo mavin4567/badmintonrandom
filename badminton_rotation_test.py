@@ -1,172 +1,209 @@
 import streamlit as st
 import random
+from typing import List, Optional
+
+# ============================================================
+# 🏸 Badminton Scheduler (Fair Winner + Balanced Rotation)
+# ============================================================
 
 # -----------------------------
 # Session State Initialization
 # -----------------------------
-if "players" not in st.session_state:
-    st.session_state.players = []
-if "matches" not in st.session_state:
-    st.session_state.matches = []
-if "current_match" not in st.session_state:
-    st.session_state.current_match = None
-if "win_streak" not in st.session_state:
-    st.session_state.win_streak = {}
-if "games_played" not in st.session_state:
-    st.session_state.games_played = {}
-if "resting" not in st.session_state:
-    st.session_state.resting = None
-
+ss = st.session_state
+DEFAULTS = {
+    "players": [],
+    "current_match": None,
+    "queue": [],
+    "winner_streak": {"team": None, "count": 0, "first_loser": None},
+    "history": [],
+    "stats": {},
+    "resting_player": None,
+    "last_match": None,   # ป้องกันไม่ให้เจอคู่เดิมซ้ำทันที
+}
+for k, v in DEFAULTS.items():
+    if k not in ss:
+        ss[k] = v
 
 # -----------------------------
-# Utility Functions
+# Helper Functions
 # -----------------------------
-def reset_game():
-    st.session_state.matches = []
-    st.session_state.current_match = None
-    st.session_state.win_streak = {p: 0 for p in st.session_state.players}
-    st.session_state.games_played = {p: 0 for p in st.session_state.players}
-    st.session_state.resting = None
-    make_new_round()
+def force_rerun():
+    try:
+        st.rerun()
+    except:
+        try:
+            st.experimental_rerun()
+        except:
+            pass
 
+def init_stats(players: List[str]):
+    ss.stats = {p: {"played": 0, "win": 0} for p in players}
 
-def make_teams(players):
-    random.shuffle(players)
-    teams = [players[i:i+2] for i in range(0, len(players), 2)]
-    return teams
+def _choose_resting_player(players: List[str]) -> Optional[str]:
+    """พักจากคนที่เล่นเยอะที่สุด"""
+    if len(players) % 2 == 0:
+        return None
+    max_played = max(ss.stats.get(p, {"played": 0})["played"] for p in players)
+    candidates = [p for p in players if ss.stats[p]["played"] == max_played]
+    return random.choice(candidates)
 
+def _pair_teams(active_players: List[str]) -> List[List[str]]:
+    shuffled = active_players[:]
+    random.shuffle(shuffled)
+    if len(shuffled) % 2 == 1:
+        shuffled = shuffled[:-1]
+    return [sorted(shuffled[i:i+2]) for i in range(0, len(shuffled), 2)]
 
-def make_new_round():
-    players = st.session_state.players.copy()
-
-    # ถ้าจำนวนคนเป็นคี่ → ให้พักคนที่เล่นเยอะที่สุด
-    if len(players) % 2 == 1:
-        most_played = max(st.session_state.games_played, key=st.session_state.games_played.get)
-        st.session_state.resting = most_played
-        players.remove(most_played)
-    else:
-        st.session_state.resting = None
-
-    teams = make_teams(players)
-
-    # สร้างแมตช์ใหม่จากทีม
-    st.session_state.matches = []
-    for i in range(0, len(teams), 2):
-        if i+1 < len(teams):
-            st.session_state.matches.append((teams[i], teams[i+1]))
-
-    if st.session_state.matches:
-        st.session_state.current_match = st.session_state.matches.pop(0)
-    else:
-        st.session_state.current_match = None
-
-
-def process_result(winner_side):
-    match = st.session_state.current_match
-    if not match:
+def start_new_round():
+    players = ss.players[:]
+    if len(players) < 4:
+        ss.current_match = None
+        ss.queue = []
         return
 
-    left, right = match
+    ss.resting_player = _choose_resting_player(players)
+    active = [p for p in players if p != ss.resting_player]
+
+    teams = _pair_teams(active)
+    if len(teams) < 2:
+        ss.current_match = None
+        ss.queue = []
+        return
+
+    # หลีกเลี่ยงจับคู่ซ้ำกับ last_match
+    first, second = teams[0], teams[1]
+    if ss.last_match:
+        last_left, last_right = ss.last_match
+        if {tuple(first), tuple(second)} == {tuple(last_left), tuple(last_right)}:
+            if len(teams) > 2:
+                random.shuffle(teams)
+                first, second = teams[0], teams[1]
+
+    ss.current_match = (first, second)
+    ss.queue = teams[2:]
+    ss.winner_streak = {"team": None, "count": 0, "first_loser": None}
+
+def _update_stats(team: List[str], *, is_winner: bool):
+    for p in team:
+        ss.stats[p]["played"] += 1
+        if is_winner:
+            ss.stats[p]["win"] += 1
+
+def _fmt_team(team: List[str]) -> str:
+    return " & ".join(team)
+
+def process_result(winner_side: str):
+    if not ss.current_match:
+        return
+
+    left, right = ss.current_match
     winner = left if winner_side == "left" else right
     loser = right if winner_side == "left" else left
 
-    # update games played
-    for p in winner + loser:
-        st.session_state.games_played[p] += 1
+    ss.history.append(f"{_fmt_team(winner)} ✅ ชนะ {_fmt_team(loser)} ❌")
+    _update_stats(winner, is_winner=True)
+    _update_stats(loser, is_winner=False)
 
-    # update win streak
-    for p in winner:
-        st.session_state.win_streak[p] += 1
-    for p in loser:
-        st.session_state.win_streak[p] = 0
+    # เก็บ loser ไว้ในคิวเสมอ
+    ss.queue.append(loser)
 
-    # ถ้าชนะติด 2 ครั้ง → ต้องออก
-    if all(st.session_state.win_streak[p] >= 2 for p in winner):
-        for p in winner:
-            st.session_state.win_streak[p] = 0
-        survivor = None
+    # จัดการ streak
+    if ss.winner_streak["team"] == winner:
+        ss.winner_streak["count"] += 1
     else:
-        survivor = winner
+        ss.winner_streak = {"team": winner, "count": 1, "first_loser": loser}
 
-    # คนใหม่เข้ามาแทนที่
-    available = [p for p in st.session_state.players if p not in winner + loser]
-    if st.session_state.resting:
-        available.append(st.session_state.resting)
-
-    if available:
-        # เลือกคนเล่นน้อยสุดเข้ามา
-        sorted_players = sorted(available, key=lambda x: st.session_state.games_played[x])
-        new_players = sorted_players[:len(loser)]
-    else:
-        new_players = []
-
-    if survivor:
-        st.session_state.current_match = (survivor, new_players)
-    else:
-        if len(new_players) == 4:
-            st.session_state.current_match = (new_players[:2], new_players[2:])
+    # Case: ชนะ 2 ติด → ต้องออก
+    if ss.winner_streak["count"] >= 2:
+        first_loser = ss.winner_streak["first_loser"]
+        if ss.queue:
+            incoming = ss.queue.pop(0)
+            ss.current_match = (first_loser, incoming)
+            ss.winner_streak = {"team": None, "count": 0, "first_loser": None}
         else:
-            make_new_round()
+            start_new_round()
+    else:
+        # ทีมชนะอยู่ต่อ + หาคู่ใหม่
+        if ss.queue:
+            incoming = ss.queue.pop(0)
+            ss.current_match = (winner, incoming)
+        else:
+            start_new_round()
 
+    ss.last_match = ss.current_match
+    force_rerun()
 
 # -----------------------------
 # UI
 # -----------------------------
-st.title("🏸 Badminton Match Rotation")
+st.set_page_config(page_title="Badminton Scheduler", layout="centered")
+st.title("🏸 Badminton Scheduler ก๊วนลุงๆ🧔🏻")
 
-# Input players
-if not st.session_state.players:
-    st.subheader("ใส่รายชื่อผู้เล่น (สูงสุด 16 คน, กด Enter เพื่อขึ้นบรรทัดใหม่)")
-    names_text = st.text_area("รายชื่อผู้เล่น", "")
-    if st.button("เริ่มเกม"):
-        players = [n.strip() for n in names_text.split("\n") if n.strip()]
-        if 2 <= len(players) <= 16:
-            st.session_state.players = players
-            reset_game()
-            st.rerun()
+# 🔄 Refresh อัตโนมัติทุก 10 วินาที
+st_autorefresh = st.experimental_autorefresh(interval=10_000, limit=None, key="autorefresh")
+
+names_input = st.text_area("👥 ใส่รายชื่อผู้เล่น (ขึ้นบรรทัดใหม่)", "", height=180)
+players = [n.strip() for n in names_input.split("\n") if n.strip()]
+
+c1, c2, c3 = st.columns(3)
+with c1:
+    if st.button("🚀 เริ่มเกมใหม่"):
+        if len(players) < 4:
+            st.error("ต้องมีอย่างน้อย 4 คน")
+        elif len(players) > 16:
+            st.error("สูงสุด 16 คน")
         else:
-            st.warning("กรุณาใส่ผู้เล่นระหว่าง 2 ถึง 16 คน")
-else:
-    # Current Match
-    if st.session_state.current_match:
-        left, right = st.session_state.current_match
-        col1, col2, col3 = st.columns([1, 1, 1])
-
-        with col1:
-            st.subheader("ทีมซ้าย")
-            st.write(", ".join(left))
-            if st.button("✅ ทีมซ้ายชนะ"):
-                process_result("left")
-                st.rerun()
-
-        with col2:
-            st.subheader("VS")
-
-        with col3:
-            st.subheader("ทีมขวา")
-            st.write(", ".join(right))
-            if st.button("✅ ทีมขวาชนะ"):
-                process_result("right")
-                st.rerun()
-
-    else:
-        st.info("รอบนี้จบแล้ว ✅ เริ่มรอบใหม่...")
-        if st.button("เริ่มรอบใหม่"):
-            make_new_round()
-            st.rerun()
-
-    # Stats
-    st.subheader("📊 สถิติผู้เล่น")
-    for p in st.session_state.players:
-        st.write(f"{p}: เล่น {st.session_state.games_played[p]} ครั้ง | Win Streak: {st.session_state.win_streak[p]}")
-
-    if st.session_state.resting:
-        st.info(f"🛑 พัก: {st.session_state.resting}")
-
-    # Controls
-    st.subheader("⚙️ การจัดการ")
-    if st.button("🔄 Reset เกม"):
-        reset_game()
-        st.rerun()
+            ss.players = players
+            init_stats(players)
+            start_new_round()
+            st.success("เริ่มเกมใหม่แล้ว!")
+            force_rerun()
+with c2:
+    if st.button("♻️ Reset"):
+        for k in list(ss.keys()):
+            del ss[k]
+        st.success("ล้างสถานะแล้ว")
+        force_rerun()
+with c3:
     if st.button("🔃 Refresh"):
-        st.rerun()
+        force_rerun()
+
+if ss.get("resting_player"):
+    st.info(f"👤 ผู้เล่นที่พักรอบนี้: **{ss.resting_player}**")
+
+if ss.get("current_match"):
+    left, right = ss.current_match
+    st.subheader("🎯 แมตช์ปัจจุบัน")
+    st.markdown(f"**ทีมซ้าย:** {_fmt_team(left)} 🆚 **ทีมขวา:** {_fmt_team(right)}")
+    c1, c2 = st.columns(2)
+    with c1:
+        if st.button("✅ ทีมซ้ายชนะ"):
+            process_result("left")
+    with c2:
+        if st.button("✅ ทีมขวาชนะ"):
+            process_result("right")
+    if ss.get("queue"):
+        st.caption("คิวถัดไป:")
+        for i, t in enumerate(ss.queue, 1):
+            st.write(f"• {_fmt_team(t)}")
+else:
+    if ss.get("players"):
+        st.warning("ยังไม่มีแมตช์ — กดเริ่มเกมใหม่")
+
+if ss.get("history"):
+    st.subheader("📜 ประวัติการแข่งขัน")
+    for i, line in enumerate(ss.history, 1):
+        st.write(f"{i}. {line}")
+
+if ss.get("stats"):
+    st.subheader("📊 สถิติผู้เล่น")
+    ordered = sorted(ss.stats.items(), key=lambda kv: (kv[1]["played"], -kv[1]["win"]))
+    st.table([
+        {
+            "ผู้เล่น": name,
+            "แมตช์": data["played"],
+            "ชนะ": data["win"],
+            "อัตราชนะ (%)": round((data["win"]/data["played"]*100) if data["played"] else 0, 1),
+        }
+        for name, data in ordered
+    ])
