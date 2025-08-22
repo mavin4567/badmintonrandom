@@ -215,12 +215,16 @@ if ss.get("history"):
 if ss.get("stats"):
     st.subheader("📊 สถิติผู้เล่น")
     ordered = sorted(ss.stats.items(), key=lambda kv: (kv[1]["played"], -kv[1]["win"]))
-    st.table([
-        {
+
+    table_data = []
+    for idx, (name, data) in enumerate(ordered, start=1):  # 👉 start=1 เพื่อให้เริ่มจาก 1
+        table_data.append({
+            "ลำดับ": idx,
             "ผู้เล่น": name,
             "แมตช์": data["played"],
             "ชนะ": data["win"],
             "อัตราชนะ (%)": round((data["win"]/data["played"]*100) if data["played"] else 0, 1),
-        }
-        for name, data in ordered
+        })
+
+    st.table(table_data)
     ])
